@@ -21,17 +21,25 @@ class Trade:
         self.usdvalue = median * float(self.amount)
 
     def printTrade(self):
-        print("{0:<24s} {1:<5s} {2: 2.8f} {3:<3s} {4:#04.2f} USD".format(self.timestamp, self.type, self.amount, self.currency, self.usdvalue))
+        print("{0:<24s}, {1:<5s}, {2: 2.8f}, {3:<3s}, {4:#04.2f}, USD".format(self.timestamp, self.type, self.amount, self.currency, self.usdvalue))
 
 
 if __name__=="__main__":
     csvfile = input("CSV Path: ")
+
+    tradearray = []
 
     with open(csvfile) as data:
         reader = csv.reader(data)
         next(reader)
         for line in reader:
             transaction = Trade(line)
+
+            if len(tradearray) > 0:
+                prevtransaction = tradearray[len(tradearray) - 1]
+                if transaction.timestamp == prevtransaction.timestamp:
+                        prevtransaction.amount += transaction.amount
+                        continue
 
             reqparams = {
                 "start" : transaction.timestamp,
@@ -44,4 +52,7 @@ if __name__=="__main__":
             response = requests.get("https://api.gdax.com/products/%s-USD/candles" % transaction.currency, reqparams)
             if response:
                 transaction.calcUSDValue(response.json()[0])
-                transaction.printTrade()
+            tradearray.append(transaction)
+
+        for item in tradearray:
+            item.printTrade()
