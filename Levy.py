@@ -26,6 +26,7 @@ class Trade:
 
 if __name__=="__main__":
     csvfile = input("CSV Path: ")
+    csvtype = input("CSV Type: ")
 
     tradearray = []
 
@@ -33,13 +34,18 @@ if __name__=="__main__":
         reader = csv.reader(data)
         next(reader)
         for line in reader:
-            transaction = Trade(line)
+            if(csvtype == "GDAX"):
+                transaction = Trade(line)
+            else:
+
+                transaction = Trade(["mine", datetime.utcfromtimestamp(float(line[2])).isoformat() + ".000Z", line[7], "","ETH"])
 
             if len(tradearray) > 0:
                 prevtransaction = tradearray[len(tradearray) - 1]
                 if transaction.timestamp == prevtransaction.timestamp:
                         prevtransaction.amount += transaction.amount
                         continue
+                prevtransaction.printTrade()
 
             reqparams = {
                 "start" : transaction.timestamp,
