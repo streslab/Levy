@@ -1,64 +1,82 @@
+import argparse
 import csv
 from datetime import datetime, timedelta
 import time
 import sys
-import requests
 import time
+import sqlite3
 
-GDAX_RATE_DELAY = .33
+TRADING_DB = 'trades.db'
+
+def init_db():
+    conn = sqlite3.connect(TRADING_DB)
+    cursor = conn.cursor()
+
+    # Tracks buy and sell transactions
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY,
+        symbol TEXT,
+        side TEXT,
+        quantity REAL,
+        price REAL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );""")
+    
+    # Tracks the 'lots' from each buy. As portions of the lot are
+    # sold, the remaining_quantity decrements so that cost basis
+    # can be accurately tracked.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lots (
+        id INTEGER PRIMARY KEY,
+        transaction_id INTEGER,
+        symbol TEXT,
+        original_quantity REAL,
+        remaining_quantity REAL,
+        buy_price REAL,
+        buy_timestamp DATETIME,
+        FOREIGN KEY(transaction_id) REFERENCES transactions(id)
+    );""")
+
+    conn.commit()
+    conn.close()
 
 
-class Trade:
-    def __init__(self, data):
-        self.type = data[0]
-        self.timestamp = data[1]
-        self.amount = float(data[2])
-        self.currency = data[4]
-        self.usdvalue = 0.0
+def import_coinbase_transactions(filename):
+    with open(filename,'r') as csvfile:
+        reader = None
+        while True:
+            last_pos = csvfile.tell()
+            line = csvfile.readline()
+            if not line:
+                break # EOF
+            if "Price at Transaction" in line:
+                csvfile.seek(last_pos)
+                reader = csv.DictReader(csvfile)
+                break
 
-    def calcUSDValue(self, apidata):
-        median = (apidata[3] - apidata[4])/2 + apidata[4]
-        self.usdvalue = median * float(self.amount)
+        print(reader.fieldnames)
+        for row in reader:
+            print(row)
+            break
 
-    def printTrade(self):
-        print("{0:<24s}, {1:<5s}, {2: 2.8f}, {3:<3s}, {4:#04.2f}, USD".format(self.timestamp, self.type, self.amount, self.currency, self.usdvalue))
+def import_kraken_transactions(filename):
+    pass
+
+def import_etherscan_transactions(filename):
+    pass
 
 
 if __name__=="__main__":
-    csvfile = input("CSV Path: ")
-    csvtype = input("CSV Type: ")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", help="Import transactions", action="store_true")
+    parser.add_argument("-t", "--type", dest = "file_type", help="File format: (C)oinbase, (K)raken, (E)therscan)")
+    parser.add_argument("-p", "--path", help="File path")
+    
+    args = parser.parse_args()
 
-    tradearray = []
+    if args.i:
+        file_type = args.file_type
+        if file_type.upper() == "C":
+            import_coinbase_transactions(args.path)
 
-    with open(csvfile) as data:
-        reader = csv.reader(data)
-        next(reader)
-        for line in reader:
-            if(csvtype == "GDAX"):
-                transaction = Trade(line)
-            else:
-
-                transaction = Trade(["mine", datetime.utcfromtimestamp(float(line[2])).isoformat() + ".000Z", line[7], "","ETH"])
-
-            if len(tradearray) > 0:
-                prevtransaction = tradearray[len(tradearray) - 1]
-                if transaction.timestamp == prevtransaction.timestamp:
-                        prevtransaction.amount += transaction.amount
-                        continue
-                prevtransaction.printTrade()
-
-            reqparams = {
-                "start" : transaction.timestamp,
-                "end" : (datetime.strptime(transaction.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") + timedelta(minutes=1)).isoformat(),
-                "granularity" : "60",
-            }
-
-            time.sleep(GDAX_RATE_DELAY)
-
-            response = requests.get("https://api.gdax.com/products/%s-USD/candles" % transaction.currency, reqparams)
-            if response:
-                transaction.calcUSDValue(response.json()[0])
-            tradearray.append(transaction)
-
-        for item in tradearray:
-            item.printTrade()
