@@ -112,10 +112,41 @@ def import_coinbase_transactions(filename):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (id, account, symbol, side, quantity, price, timestamp, notes))
         conn.commit()
+        conn.close()
 
 
 def import_coinbasepro_transactions(filename):
-    pass
+    with open(filename,'r') as csvfile:
+        reader = None
+        while True:
+            last_pos = csvfile.tell()
+            line = csvfile.readline()
+            if not line:
+                break # EOF
+            if "trade id" in line:
+                csvfile.seek(last_pos)
+                reader = csv.DictReader(csvfile)
+                break
+
+        account = "Coinbase Pro"
+        conn = sqlite3.connect(TRADING_DB)
+        cursor = conn.cursor()
+
+        for row in reader:
+            print(row)
+            side = normalize_side(row['side'])
+            id = row['trade id']
+            symbol = row['size unit']
+            quantity = float(row['size'])
+            price = float(row['price'].replace('$', '').replace(',', ''))
+            timestamp = datetime.strptime(row['created at'].split('.')[0],"%Y-%m-%dT%H:%M:%S")
+
+            cursor.execute("""
+                INSERT OR IGNORE INTO transactions (id, account, symbol, side, quantity, price, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (id, account, symbol, side, quantity, price, timestamp))
+        conn.commit()
+        conn.close()
 
 
 def import_kraken_transactions(filename):
@@ -138,4 +169,6 @@ if __name__=="__main__":
         file_type = args.file_type
         if file_type.upper() == "C":
             import_coinbase_transactions(args.path)
+        if file_type.upper() == "CP":
+            import_coinbasepro_transactions(args.path)
 
